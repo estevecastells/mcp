@@ -1,156 +1,1219 @@
 id: invokely-mcp-connector
 name: Invokely MCP Connector
-description: >
-  Invokely exposes official statistics through a hosted MCP service. This entry
-  is for the MIT-licensed local stdio connector, which forwards MCP requests to
-  that service; its public repository does not contain the hosted backend. The
-  connector uses the trial endpoint without a key, limited to 25 calls per day
-  per IP, or an API key from INVOKELY_API_KEY. It can find indicators, resolve
-  places, return cited values and time series, compare places, and rank places.
-  Returned figures include their period, unit, publisher, source link, and
-  citation.
+description: >-
+  Invokely exposes official statistics through a hosted MCP service. This entry is for the MIT-licensed
+  local stdio connector, which forwards MCP tool discovery and calls to that service unchanged; its public
+  repository does not contain the hosted backend, so the tool list below reflects the hosted service on
+  the date in updated_at and can change independently of the connector. Without INVOKELY_API_KEY the connector
+  uses the trial endpoint, limited to 25 calls per day per IP. Requires Node.js 22 or later.
+
+
+  Statistics tools (read-only, usable on the trial endpoint): find indicators, resolve places, return
+  cited values and time series, compare and rank places, check claims, list revisions, place profiles
+  and the release calendar. Returned figures include their period, unit, publisher, source link and citation.
+
+
+  Account tools are listed by the trial endpoint but need an authenticated account (API key), and some
+  a specific plan. Write operations: workspace_save, workspace_update and workspace_delete (Pro plan),
+  subscribe_alert, update_alert and delete_alert, save_to_collection, and send_feedback (also allowed
+  without an account, rate limited). workspace_delete and delete_alert are destructive and cannot be undone.
+  The connector does not restrict which tools a client can call.
 author:
   name: Esteve Castells
   github: estevecastells
 repository: https://github.com/estevecastells/invokely-mcp-connector
 transport:
-  - stdio
+- stdio
 category: Research
 tags:
-  - official-statistics
-  - public-data
-  - statistics
-  - data-api
-  - mcp-connector
-created_at: "2026-10-12T00:00:00.000Z"
-updated_at: "2026-10-12T00:00:00.000Z"
+- official-statistics
+- public-data
+- statistics
+- data-api
+- mcp-connector
+created_at: '2026-10-12T00:00:00.000Z'
+updated_at: '2026-11-09T00:00:00.000Z'
 tools:
-  - name: search_indicators
-    description: Search official statistical indicators by name or topic, optionally for a place.
-    input_schema:
-      type: object
-      properties:
-        query:
+- name: search_indicators
+  description: Find official statistical indicators by natural language (English or Spanish), optionally
+    limited to a geography. Read-only; works on the trial endpoint.
+  input_schema:
+    type: object
+    properties:
+      query:
+        type: string
+        minLength: 1
+        maxLength: 300
+        description: What you are looking for, for example "inflation", "paro registrado", "average income
+          per person".
+      geography:
+        type: string
+        minLength: 1
+        maxLength: 200
+        description: Optional place the data is for. Same format as place in the other tools.
+    required:
+    - query
+    additionalProperties: false
+- name: resolve_place
+  description: Resolve a place name or code to the normalized entity Invokely uses, with official codes
+    (INE, NUTS, ISO, FIPS), level and parent. Read-only.
+  input_schema:
+    type: object
+    properties:
+      name:
+        type: string
+        minLength: 1
+        maxLength: 200
+        description: 'Place name or id. Examples: "Mataró", "Barcelona", "provincia de Barcelona", "Cataluña",
+          "España", "Germany", "EU", "es-mun-08121", "08121" (INE code), "ES51" (NUTS), "Texas", "Travis
+          County, Texas", "us-county-48453", "fips:48453" (US county FIPS), "Austin, TX", "us-place-4805000",
+          "fips:4805000" (US city GEOID).'
+      country:
+        type: string
+        maxLength: 2
+        description: Optional ISO 3166-1 alpha-2 code to disambiguate the place, for example "ES" or "US".
+      level:
+        type: string
+        enum:
+        - municipality
+        - province
+        - region
+        - country
+        - supranational
+        description: Optional preferred level.
+    required:
+    - name
+    additionalProperties: false
+- name: get_value
+  description: 'Get one official figure for an indicator and place: the latest or a given period, optionally
+    transformed (growth, per capita, real terms) or as it was known at an earlier date (as_of). Returns
+    period, unit and source citation. Read-only.'
+  input_schema:
+    type: object
+    properties:
+      indicator:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: Indicator id from search_indicators, for example "population", "registered_unemployment_rate",
+          "unemployment_rate", "cpi_annual_change", "net_income_per_person".
+      place:
+        type: string
+        minLength: 1
+        maxLength: 200
+        description: 'Place name or id. Examples: "Mataró", "Barcelona", "provincia de Barcelona", "Cataluña",
+          "España", "Germany", "EU", "es-mun-08121", "08121" (INE code), "ES51" (NUTS), "Texas", "Travis
+          County, Texas", "us-county-48453", "fips:48453" (US county FIPS), "Austin, TX", "us-place-4805000",
+          "fips:4805000" (US city GEOID).'
+      period:
+        type: string
+        maxLength: 10
+        description: Optional. "2024" (year), "2024-Q3" (quarter), "2024-S1" (half year) or "2024-09"
+          (month). Omit for the latest value.
+      frequency:
+        type: string
+        enum:
+        - year
+        - half
+        - quarter
+        - month
+        description: Optional. Force a frequency when the indicator exists in several (for example monthly
+          and annual unemployment).
+      country:
+        type: string
+        maxLength: 2
+        description: Optional ISO 3166-1 alpha-2 code to disambiguate the place, for example "ES" or "US".
+      transform:
+        type: string
+        enum:
+        - pct_change
+        - yoy
+        - diff
+        - yoy_diff
+        - index
+        - rolling_mean
+        - per_capita
+        - per_1000
+        - per_100k
+        - real
+        - share_of_parent
+        description: 'Optional calculation done by the server, with every input cited. pct_change: % change
+          from the previous period. yoy: % change from the same period a year earlier (12 months, 4 quarters
+          or 1 year back). diff, yoy_diff: the same changes as differences, in the indicator unit (percentage
+          points for rates). index: value / value in base x 100 (needs base). rolling_mean: average of
+          the last window periods. per_capita, per_1000, per_100k: a total (population, births, GDP, emissions)
+          divided by the population of the same place and year. real: a money amount at current prices
+          adjusted for inflation with the consumer price index of the place''s country in the same currency
+          (base: price year, default the latest complete year). share_of_parent: a total as % of the parent
+          place (county of its state, state of the nation, region of its country). Per person and share
+          transforms refuse rates, shares, indices, medians and per person values, and share_of_parent
+          also refuses net balances such as net migration; pct_change, yoy and index refuse percentages.'
+      base:
+        type: string
+        maxLength: 10
+        description: 'index: the period equal to 100, for example "2015" or "2020-01" (a year of a monthly
+          series is the average of its months). real: the year whose prices values are expressed in, for
+          example "2024".'
+      window:
+        type: integer
+        minimum: 2
+        maximum: 12
+        description: 'rolling_mean only: number of periods averaged, 2 to 12. Default 3.'
+      citation_style:
+        type: string
+        enum:
+        - apa
+        - mla
+        - chicago
+        - harvard
+        - bibtex
+        - ris
+        - all
+        description: Optional. Adds source.citations with the citation in this style (APA 7, MLA 9, Chicago
+          author-date, Harvard, BibTeX or RIS), or in all six with "all". The publisher is the author.
+          Leave it out to keep the response short.
+      as_of:
+        type: string
+        maxLength: 32
+        description: 'Optional point in time, UTC: a date ("2026-10-03", meaning the end of that day)
+          or a date and time with a zone ("2026-10-03T14:30:00Z"). Returns the figures as Invokely held
+          them at that instant, for backtests, audits and reproducible runs. Must not be in the future.'
+    required:
+    - indicator
+    - place
+    additionalProperties: false
+- name: get_series
+  description: Get the time series of an indicator for one place from one source, optionally transformed
+    or as known at an earlier date; World Bank population projections are returned separately. Read-only.
+  input_schema:
+    type: object
+    properties:
+      indicator:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: Indicator id from search_indicators, for example "population", "registered_unemployment_rate",
+          "unemployment_rate", "cpi_annual_change", "net_income_per_person".
+      place:
+        type: string
+        minLength: 1
+        maxLength: 200
+        description: 'Place name or id. Examples: "Mataró", "Barcelona", "provincia de Barcelona", "Cataluña",
+          "España", "Germany", "EU", "es-mun-08121", "08121" (INE code), "ES51" (NUTS), "Texas", "Travis
+          County, Texas", "us-county-48453", "fips:48453" (US county FIPS), "Austin, TX", "us-place-4805000",
+          "fips:4805000" (US city GEOID).'
+      from:
+        type: string
+        maxLength: 10
+        description: Optional first period, inclusive. Same formats as period.
+      to:
+        type: string
+        maxLength: 10
+        description: Optional last period, inclusive.
+      frequency:
+        type: string
+        enum:
+        - year
+        - half
+        - quarter
+        - month
+        description: Optional. Force a frequency when the indicator exists in several (for example monthly
+          and annual unemployment).
+      country:
+        type: string
+        maxLength: 2
+        description: Optional ISO 3166-1 alpha-2 code to disambiguate the place, for example "ES" or "US".
+      include_projections:
+        type: boolean
+        description: Also return the publisher projections after the last observed period, kept apart
+          from points. Default false.
+      transform:
+        type: string
+        enum:
+        - pct_change
+        - yoy
+        - diff
+        - yoy_diff
+        - index
+        - rolling_mean
+        - per_capita
+        - per_1000
+        - per_100k
+        - real
+        - share_of_parent
+        description: 'Optional calculation done by the server, with every input cited. pct_change: % change
+          from the previous period. yoy: % change from the same period a year earlier (12 months, 4 quarters
+          or 1 year back). diff, yoy_diff: the same changes as differences, in the indicator unit (percentage
+          points for rates). index: value / value in base x 100 (needs base). rolling_mean: average of
+          the last window periods. per_capita, per_1000, per_100k: a total (population, births, GDP, emissions)
+          divided by the population of the same place and year. real: a money amount at current prices
+          adjusted for inflation with the consumer price index of the place''s country in the same currency
+          (base: price year, default the latest complete year). share_of_parent: a total as % of the parent
+          place (county of its state, state of the nation, region of its country). Per person and share
+          transforms refuse rates, shares, indices, medians and per person values, and share_of_parent
+          also refuses net balances such as net migration; pct_change, yoy and index refuse percentages.'
+      base:
+        type: string
+        maxLength: 10
+        description: 'index: the period equal to 100, for example "2015" or "2020-01" (a year of a monthly
+          series is the average of its months). real: the year whose prices values are expressed in, for
+          example "2024".'
+      window:
+        type: integer
+        minimum: 2
+        maximum: 12
+        description: 'rolling_mean only: number of periods averaged, 2 to 12. Default 3.'
+      citation_style:
+        type: string
+        enum:
+        - apa
+        - mla
+        - chicago
+        - harvard
+        - bibtex
+        - ris
+        - all
+        description: Optional. Adds source.citations with the citation in this style (APA 7, MLA 9, Chicago
+          author-date, Harvard, BibTeX or RIS), or in all six with "all". The publisher is the author.
+          Leave it out to keep the response short.
+      as_of:
+        type: string
+        maxLength: 32
+        description: 'Optional point in time, UTC: a date ("2026-10-03", meaning the end of that day)
+          or a date and time with a zone ("2026-10-03T14:30:00Z"). Returns the figures as Invokely held
+          them at that instant, for backtests, audits and reproducible runs. Must not be in the future.'
+    required:
+    - indicator
+    - place
+    additionalProperties: false
+- name: compare
+  description: Compare one indicator across 2 to 10 places for the same period, using one shared source
+    when possible. Read-only.
+  input_schema:
+    type: object
+    properties:
+      indicator:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: Indicator id from search_indicators, for example "population", "registered_unemployment_rate",
+          "unemployment_rate", "cpi_annual_change", "net_income_per_person".
+      places:
+        type: array
+        minItems: 2
+        maxItems: 10
+        items:
           type: string
-        geography:
+          minLength: 1
+          maxLength: 200
+          description: 'Place name or id. Examples: "Mataró", "Barcelona", "provincia de Barcelona", "Cataluña",
+            "España", "Germany", "EU", "es-mun-08121", "08121" (INE code), "ES51" (NUTS), "Texas", "Travis
+            County, Texas", "us-county-48453", "fips:48453" (US county FIPS), "Austin, TX", "us-place-4805000",
+            "fips:4805000" (US city GEOID).'
+        description: Place names or ids.
+      period:
+        type: string
+        maxLength: 10
+        description: Optional. "2024" (year), "2024-Q3" (quarter), "2024-S1" (half year) or "2024-09"
+          (month). Omit for the latest value.
+      country:
+        type: string
+        maxLength: 2
+        description: Optional ISO 3166-1 alpha-2 code to disambiguate the place, for example "ES" or "US".
+      transform:
+        type: string
+        enum:
+        - pct_change
+        - yoy
+        - diff
+        - yoy_diff
+        - index
+        - rolling_mean
+        - per_capita
+        - per_1000
+        - per_100k
+        - real
+        - share_of_parent
+        description: 'Optional calculation done by the server, with every input cited. pct_change: % change
+          from the previous period. yoy: % change from the same period a year earlier (12 months, 4 quarters
+          or 1 year back). diff, yoy_diff: the same changes as differences, in the indicator unit (percentage
+          points for rates). index: value / value in base x 100 (needs base). rolling_mean: average of
+          the last window periods. per_capita, per_1000, per_100k: a total (population, births, GDP, emissions)
+          divided by the population of the same place and year. real: a money amount at current prices
+          adjusted for inflation with the consumer price index of the place''s country in the same currency
+          (base: price year, default the latest complete year). share_of_parent: a total as % of the parent
+          place (county of its state, state of the nation, region of its country). Per person and share
+          transforms refuse rates, shares, indices, medians and per person values, and share_of_parent
+          also refuses net balances such as net migration; pct_change, yoy and index refuse percentages.'
+      base:
+        type: string
+        maxLength: 10
+        description: 'index: the period equal to 100, for example "2015" or "2020-01" (a year of a monthly
+          series is the average of its months). real: the year whose prices values are expressed in, for
+          example "2024".'
+      window:
+        type: integer
+        minimum: 2
+        maximum: 12
+        description: 'rolling_mean only: number of periods averaged, 2 to 12. Default 3.'
+      citation_style:
+        type: string
+        enum:
+        - apa
+        - mla
+        - chicago
+        - harvard
+        - bibtex
+        - ris
+        - all
+        description: Optional. Adds source.citations with the citation in this style (APA 7, MLA 9, Chicago
+          author-date, Harvard, BibTeX or RIS), or in all six with "all". The publisher is the author.
+          Leave it out to keep the response short.
+      as_of:
+        type: string
+        maxLength: 32
+        description: 'Optional point in time, UTC: a date ("2026-10-03", meaning the end of that day)
+          or a date and time with a zone ("2026-10-03T14:30:00Z"). Returns the figures as Invokely held
+          them at that instant, for backtests, audits and reproducible runs. Must not be in the future.'
+    required:
+    - indicator
+    - places
+    additionalProperties: false
+- name: rank_places
+  description: Rank places of one level inside an area (countries, EU countries, US states, provinces)
+    by an indicator, with period and source. Read-only.
+  input_schema:
+    type: object
+    properties:
+      indicator:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: Indicator id from search_indicators, for example "population", "registered_unemployment_rate",
+          "unemployment_rate", "cpi_annual_change", "net_income_per_person".
+      level:
+        type: string
+        enum:
+        - country
+        - region
+        - province
+        - municipality
+        description: Level of the places ranked.
+      within:
+        type: string
+        minLength: 1
+        maxLength: 200
+        description: Optional area that contains the ranked places, for example "United States", "EU",
+          "Germany", "Texas", "Cataluña". Omit to rank all countries.
+      period:
+        type: string
+        maxLength: 10
+        description: Optional. "2024" (year), "2024-Q3" (quarter), "2024-S1" (half year) or "2024-09"
+          (month). Omit for the latest value.
+      order:
+        type: string
+        enum:
+        - desc
+        - asc
+        description: Optional. desc (highest first, default) or asc.
+      limit:
+        type: integer
+        minimum: 1
+        maximum: 100
+        description: Optional. Rows to return, 10 by default.
+      min_population:
+        type: integer
+        minimum: 0
+        description: Optional. Leave out places with fewer residents.
+      country:
+        type: string
+        maxLength: 2
+        description: Optional ISO 3166-1 alpha-2 code to disambiguate the place, for example "ES" or "US".
+      transform:
+        type: string
+        enum:
+        - per_capita
+        - per_1000
+        - per_100k
+        - yoy
+        - yoy_diff
+        description: Optional. per_capita, per_1000, per_100k (totals only) or yoy, yoy_diff. See get_value.
+      citation_style:
+        type: string
+        enum:
+        - apa
+        - mla
+        - chicago
+        - harvard
+        - bibtex
+        - ris
+        - all
+        description: Optional. Adds source.citations with the citation in this style (APA 7, MLA 9, Chicago
+          author-date, Harvard, BibTeX or RIS), or in all six with "all". The publisher is the author.
+          Leave it out to keep the response short.
+    required:
+    - indicator
+    - level
+    additionalProperties: false
+- name: get_revisions
+  description: List every version Invokely has kept of a figure, with when it was known and how the publisher
+    revised it. Read-only.
+  input_schema:
+    type: object
+    properties:
+      indicator:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: Indicator id from search_indicators, for example "population", "registered_unemployment_rate",
+          "unemployment_rate", "cpi_annual_change", "net_income_per_person".
+      place:
+        type: string
+        minLength: 1
+        maxLength: 200
+        description: 'Place name or id. Examples: "Mataró", "Barcelona", "provincia de Barcelona", "Cataluña",
+          "España", "Germany", "EU", "es-mun-08121", "08121" (INE code), "ES51" (NUTS), "Texas", "Travis
+          County, Texas", "us-county-48453", "fips:48453" (US county FIPS), "Austin, TX", "us-place-4805000",
+          "fips:4805000" (US city GEOID).'
+      period:
+        type: string
+        maxLength: 10
+        description: Optional. One period to list every version of. Same formats as period in get_value.
+      from:
+        type: string
+        maxLength: 10
+        description: Optional first period of a range, inclusive.
+      to:
+        type: string
+        maxLength: 10
+        description: Optional last period of a range, inclusive.
+      frequency:
+        type: string
+        enum:
+        - year
+        - half
+        - quarter
+        - month
+        description: Optional. Force a frequency when the indicator exists in several (for example monthly
+          and annual unemployment).
+      country:
+        type: string
+        maxLength: 2
+        description: Optional ISO 3166-1 alpha-2 code to disambiguate the place, for example "ES" or "US".
+    required:
+    - indicator
+    - place
+    additionalProperties: false
+- name: check_claim
+  description: Check one stated figure, or a batch of up to 20, against the official source and report
+    whether each matches. Read-only.
+  input_schema:
+    type: object
+    properties:
+      claims:
+        type: array
+        minItems: 1
+        maxItems: 20
+        items:
+          type: object
+          properties:
+            indicator:
+              type: string
+              minLength: 1
+              maxLength: 100
+              description: Indicator id, for example "population", "unemployment_rate", "cpi_annual_change",
+                "gdp_usd". Call search_indicators first when unsure.
+            place:
+              type: string
+              minLength: 1
+              maxLength: 200
+              description: 'Place name or id as in get_value: "Texas", "Spain", "United States", "Mataró",
+                "es-prov-08", "fips:48453".'
+            period:
+              type: string
+              maxLength: 10
+              description: 'Only when the claim names one: "2026" (year), "2026-Q2" (quarter), "2026-S1"
+                (half), "2026-08" (month). Leave it out, or pass "latest", for claims in the present tense
+                ("is", "has").'
+            value:
+              type:
+              - number
+              - string
+              description: 'The number as written, without the scale word or the % sign: 31 for "31 million",
+                3.2 for "3.2%". Digits with a dot for decimals and no separators: convert "31,290,831"
+                to 31290831, a decimal comma ("3,4%" in Spanish) to 3.4 and a thousands dot ("1.200")
+                to 1200; exponents, words and symbols are refused. A string keeps trailing zeros ("3.40"),
+                which state precision. Negative for a fall in a change claim. For rank, the position (3
+                for "third highest").'
+            unit_hint:
+              type: string
+              enum:
+              - percent
+              - percentage_points
+              - units
+              - thousands
+              - millions
+              - billions
+              - trillions
+              description: 'The scale word or unit written: percent (%), percentage_points ("points"),
+                thousands, millions, billions, trillions, or units (a plain number). Omit when nothing
+                is written.'
+            currency:
+              type: string
+              minLength: 3
+              maxLength: 3
+              description: 'ISO 4217 code when the claim is money: "USD" for $, "EUR" for €. Invokely
+                does not convert currencies; a claim in another currency than the indicator is unverifiable,
+                with indicators in that currency suggested.'
+            qualifier:
+              type: string
+              enum:
+              - exact
+              - about
+              - at_least
+              - at_most
+              description: Omit for a plain statement. exact only when the claim says "exactly" (trailing
+                zeros then count as digits); about ("about", "around", "nearly", "roughly"); at_least
+                ("more than", "over", "above", "at least"); at_most ("less than", "under", "below", and
+                "in the top 3" for ranks). Bounds are inclusive.
+            kind:
+              type: string
+              enum:
+              - level
+              - yoy
+              - yoy_diff
+              - pct_change
+              - diff
+              - per_capita
+              - per_1000
+              - per_100k
+              - rank
+              description: 'level (default): the figure itself. yoy: % change from a year earlier ("prices
+                rose 3% over the year"). pct_change: % change from the previous period. yoy_diff, diff:
+                the same changes in the indicator unit, points for rates ("unemployment fell 0.4 points").
+                per_capita, per_1000, per_100k: a total divided by population. rank: position among places
+                ("third highest").'
+            rank_within:
+              type: string
+              maxLength: 200
+              description: 'rank only: the area of the ranking, for example "EU" for "among EU countries",
+                "United States" for states, "Texas" for its counties. Required below country level; omitted
+                for countries means every country.'
+            rank_order:
+              type: string
+              enum:
+              - highest
+              - lowest
+              description: 'rank only: highest (default) or lowest first.'
+            country:
+              type: string
+              maxLength: 2
+              description: Optional ISO 3166-1 alpha-2 code to disambiguate the place.
+            as_of:
+              type: string
+              maxLength: 32
+              description: When the claim was made or published, as a UTC date ("2026-09-15") or date
+                and time with a zone. A claim that was right with the figures published then but was revised
+                or superseded since comes back outdated with accurate_when_made true, and vintage shows
+                then versus now. Level claims only.
+            text:
+              type: string
+              maxLength: 1000
+              description: Optional original sentence. Echoed back for your records and never interpreted.
+            tolerance:
+              type: object
+              properties:
+                relative:
+                  type: number
+                  minimum: 0
+                  maximum: 0.5
+                  description: Share of the official value, for example 0.05 for 5%.
+                absolute:
+                  type: number
+                  minimum: 0
+                  description: In the same unit as value and unit_hint.
+              additionalProperties: false
+              description: 'Optional. Replaces the approximately_accurate band (default: 2% of the official
+                value or twice the rounding band, whichever is larger). Never narrower than the rounding
+                the claim implies.'
+          required:
+          - indicator
+          - place
+          - value
+          additionalProperties: false
+        description: 1 to 20 claims, each checked on its own.
+      citation_style:
+        type: string
+        enum:
+        - apa
+        - mla
+        - chicago
+        - harvard
+        - bibtex
+        - ris
+        - all
+        description: Optional. Adds official.source.citations in this style, or in all six with "all".
+    required:
+    - claims
+    additionalProperties: false
+- name: get_place_profile
+  description: 'Overview of one place in a single call: latest official figures grouped by section, each
+    with change, rank and source. Read-only.'
+  input_schema:
+    type: object
+    properties:
+      place:
+        type: string
+        minLength: 1
+        maxLength: 200
+        description: 'Place name or id. Examples: "Mataró", "Barcelona", "provincia de Barcelona", "Cataluña",
+          "España", "Germany", "EU", "es-mun-08121", "08121" (INE code), "ES51" (NUTS), "Texas", "Travis
+          County, Texas", "us-county-48453", "fips:48453" (US county FIPS), "Austin, TX", "us-place-4805000",
+          "fips:4805000" (US city GEOID).'
+      country:
+        type: string
+        maxLength: 2
+        description: Optional ISO 3166-1 alpha-2 code to disambiguate the place, for example "ES" or "US".
+      sections:
+        type: array
+        minItems: 1
+        maxItems: 9
+        items:
           type: string
-      required:
-        - query
-  - name: resolve_place
-    description: Resolve a place name or id to its normalized entity, official codes, level, and parent.
-    input_schema:
-      type: object
-      properties:
-        name:
+          enum:
+          - people
+          - work_income
+          - economy
+          - prices_housing
+          - consumers
+          - business
+          - health
+          - digital
+          - environment
+        description: Optional. Sections to return; all by default.
+    required:
+    - place
+    additionalProperties: false
+- name: workspace_list
+  description: List the charts, tables and datasets in the user's private workspace. Read-only. Requires
+    an authenticated account on the Pro plan.
+  input_schema:
+    type: object
+    properties: {}
+    additionalProperties: false
+- name: workspace_get
+  description: Read one item of the user's private workspace by id. Read-only. Requires an authenticated
+    account on the Pro plan.
+  input_schema:
+    type: object
+    properties:
+      id:
+        type: string
+        maxLength: 40
+        description: Item id, for example "wsp_3f9a..." from workspace_list.
+    required:
+    - id
+    additionalProperties: false
+- name: workspace_save
+  description: 'Write operation: save a chart, table or dataset to the user''s private workspace. Requires
+    an authenticated account on the Pro plan; other plans get PLAN_REQUIRED.'
+  input_schema:
+    type: object
+    properties:
+      kind:
+        type: string
+        enum:
+        - chart
+        - table
+        - dataset
+        description: chart or table (a saved view of an indicator) or dataset (rows you provide).
+      title:
+        type: string
+        minLength: 1
+        maxLength: 120
+      indicator:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: chart and table only. Indicator id from search_indicators, for example "population",
+          "registered_unemployment_rate", "unemployment_rate", "cpi_annual_change", "net_income_per_person".
+      places:
+        type: array
+        items:
           type: string
-        country:
+          minLength: 1
+          maxLength: 200
+          description: 'Place name or id. Examples: "Mataró", "Barcelona", "provincia de Barcelona", "Cataluña",
+            "España", "Germany", "EU", "es-mun-08121", "08121" (INE code), "ES51" (NUTS), "Texas", "Travis
+            County, Texas", "us-county-48453", "fips:48453" (US county FIPS), "Austin, TX", "us-place-4805000",
+            "fips:4805000" (US city GEOID).'
+        minItems: 1
+        maxItems: 10
+        description: chart and table only. Place names or ids.
+      from:
+        type: string
+        maxLength: 10
+        description: chart and table only. Optional first period.
+      to:
+        type: string
+        maxLength: 10
+        description: chart and table only. Optional last period.
+      frequency:
+        type: string
+        enum:
+        - year
+        - half
+        - quarter
+        - month
+        description: Optional. Force a frequency when the indicator exists in several (for example monthly
+          and annual unemployment).
+      description:
+        type: string
+        maxLength: 1000
+        description: dataset only. Optional note on what the data is.
+      columns:
+        type: array
+        items:
           type: string
-          maxLength: 2
-        level:
-          type: string
-          enum: [municipality, province, region, country, supranational]
-      required:
-        - name
-  - name: get_value
-    description: Get one official figure for an indicator and place, with period and source citation.
-    input_schema:
-      type: object
-      properties:
-        indicator:
-          type: string
-        place:
-          type: string
-        period:
-          type: string
-          maxLength: 10
-        frequency:
-          type: string
-          enum: [year, half, quarter, month]
-        country:
-          type: string
-          maxLength: 2
-      required: [indicator, place]
-  - name: get_series
-    description: Get an indicator time series for one place, with periods and source information.
-    input_schema:
-      type: object
-      properties:
-        indicator:
-          type: string
-        place:
-          type: string
-        from:
-          type: string
-          maxLength: 10
-        to:
-          type: string
-          maxLength: 10
-        frequency:
-          type: string
-          enum: [year, half, quarter, month]
-        country:
-          type: string
-          maxLength: 2
-        include_projections:
-          type: boolean
-      required: [indicator, place]
-  - name: compare
-    description: Compare one indicator across two to ten places, using one shared source when possible.
-    input_schema:
-      type: object
-      properties:
-        indicator:
-          type: string
-        places:
+          maxLength: 200
+        minItems: 1
+        maxItems: 30
+        description: dataset only. Column names.
+      rows:
+        type: array
+        maxItems: 20000
+        items:
           type: array
-          minItems: 2
-          maxItems: 10
           items:
+            type:
+            - string
+            - number
+            - 'null'
+        description: dataset only. One array per row, in column order.
+    required:
+    - kind
+    - title
+    additionalProperties: false
+- name: workspace_update
+  description: 'Write operation: change a saved workspace item in place, keeping its id. Requires an authenticated
+    account on the Pro plan.'
+  input_schema:
+    type: object
+    properties:
+      id:
+        type: string
+        maxLength: 40
+        description: Item id from workspace_list.
+      title:
+        type: string
+        minLength: 1
+        maxLength: 120
+      kind:
+        type: string
+        enum:
+        - chart
+        - table
+        description: 'Charts and tables only: switch how the view is shown.'
+      indicator:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: Indicator id from search_indicators, for example "population", "registered_unemployment_rate",
+          "unemployment_rate", "cpi_annual_change", "net_income_per_person".
+      places:
+        type: array
+        items:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: 'Place name or id. Examples: "Mataró", "Barcelona", "provincia de Barcelona", "Cataluña",
+            "España", "Germany", "EU", "es-mun-08121", "08121" (INE code), "ES51" (NUTS), "Texas", "Travis
+            County, Texas", "us-county-48453", "fips:48453" (US county FIPS), "Austin, TX", "us-place-4805000",
+            "fips:4805000" (US city GEOID).'
+        minItems: 1
+        maxItems: 10
+      from:
+        type:
+        - string
+        - 'null'
+        maxLength: 10
+        description: First period, or null to clear.
+      to:
+        type:
+        - string
+        - 'null'
+        maxLength: 10
+        description: Last period, or null to clear.
+      frequency:
+        type:
+        - string
+        - 'null'
+        enum:
+        - year
+        - half
+        - quarter
+        - month
+        - null
+      description:
+        type:
+        - string
+        - 'null'
+        maxLength: 1000
+      columns:
+        type: array
+        items:
+          type: string
+          maxLength: 200
+        minItems: 1
+        maxItems: 30
+      rows:
+        type: array
+        maxItems: 20000
+        items:
+          type: array
+          items:
+            type:
+            - string
+            - number
+            - 'null'
+    required:
+    - id
+    additionalProperties: false
+- name: workspace_delete
+  description: 'Destructive write operation: permanently delete one workspace item by id; it cannot be
+    undone. Requires an authenticated account on the Pro plan.'
+  input_schema:
+    type: object
+    properties:
+      id:
+        type: string
+        maxLength: 40
+    required:
+    - id
+    additionalProperties: false
+- name: release_calendar
+  description: Scheduled and estimated release dates of the publishers behind Invokely (BLS, BEA, Census,
+    Eurostat, INE and others). Read-only.
+  input_schema:
+    type: object
+    properties:
+      indicator:
+        type: string
+        minLength: 1
+        maxLength: 100
+        description: Optional indicator id, for example "cpi_annual_change", "unemployment_rate", "gdp".
+      place:
+        type: string
+        minLength: 1
+        maxLength: 200
+        description: 'Optional place: lists the releases of the series Invokely has for it, for example
+          "Texas", "Spain", "Mataró".'
+      source:
+        type: string
+        maxLength: 100
+        description: Optional source id or publisher name, for example "bls", "bea", "eurostat", "ine",
+          "ons".
+      country:
+        type: string
+        minLength: 2
+        maxLength: 2
+        description: Optional ISO 3166-1 alpha-2 code of the publisher's country, for example "US", "ES",
+          "GB", or "EU". With place, it only disambiguates the place name.
+      from:
+        type: string
+        maxLength: 10
+        description: Optional first day, YYYY-MM-DD, at most 30 days back. Default today.
+      to:
+        type: string
+        maxLength: 10
+        description: Optional last day, YYYY-MM-DD, at most 90 days ahead. Default 30 days after from.
+      include_unlinked:
+        type: boolean
+        description: Optional. Also list publisher releases that update no Invokely indicator.
+      limit:
+        type: integer
+        minimum: 1
+        maximum: 200
+        description: Optional. Releases to return, 50 by default.
+    additionalProperties: false
+- name: subscribe_alert
+  description: 'Write operation: create an alert for new periods or revisions of an indicator and place,
+    delivered by email, signed webhook (Builder and Pro plans) or a polled feed. Requires an authenticated
+    account; plan limits apply (Free 5, Builder 50, Pro 500 alerts).'
+  input_schema:
+    type: object
+    properties:
+      indicator:
+        type: string
+        maxLength: 100
+        description: Indicator id, for example "cpi_annual_change" or "unemployment_rate". Use search_indicators
+          when unsure.
+      place:
+        type: string
+        maxLength: 200
+        description: Place name or id, for example "Spain", "Texas", "es-mun-08121".
+      source:
+        type: string
+        maxLength: 60
+        description: Optional source id (the source.id of get_value), to follow one publisher only. Omit
+          to hear about every source of the series.
+      workspace_item:
+        type: string
+        maxLength: 40
+        description: 'Instead of indicator and place: a saved chart or table id from workspace_list.'
+      events:
+        type: array
+        items:
+          type: string
+          enum:
+          - new_period
+          - revision
+        minItems: 1
+        maxItems: 2
+        description: 'What to be told about: "new_period" (a period not published before) and "revision"
+          (a published value or its status changed). Default both.'
+      channel:
+        type: string
+        enum:
+        - email
+        - webhook
+        - feed
+        description: Default "email".
+      webhook_url:
+        type: string
+        maxLength: 2000
+        description: channel "webhook" only. A public HTTPS URL that accepts POST requests.
+      email_mode:
+        type: string
+        enum:
+        - instant
+        - daily
+        description: 'channel "email" only. "instant" (default): one email per release run; "daily": one
+          digest a day.'
+      label:
+        type: string
+        maxLength: 120
+        description: Optional name shown in emails and lists.
+    additionalProperties: false
+- name: list_alerts
+  description: List the user's alerts with target, channel, status and last delivery. Read-only. Requires
+    an authenticated account.
+  input_schema:
+    type: object
+    properties: {}
+    additionalProperties: false
+- name: update_alert
+  description: 'Write operation: pause or resume an alert, change its events, email mode or label, or
+    rotate a webhook signing secret. Requires an authenticated account.'
+  input_schema:
+    type: object
+    properties:
+      id:
+        type: string
+        maxLength: 40
+        description: Alert id from subscribe_alert or list_alerts, for example "alr_3f9a...".
+      status:
+        type: string
+        enum:
+        - active
+        - paused
+      events:
+        type: array
+        items:
+          type: string
+          enum:
+          - new_period
+          - revision
+        minItems: 1
+        maxItems: 2
+        description: 'What to be told about: "new_period" (a period not published before) and "revision"
+          (a published value or its status changed). Default both.'
+      email_mode:
+        type: string
+        enum:
+        - instant
+        - daily
+      label:
+        type: string
+        maxLength: 120
+      rotate_secret:
+        type: boolean
+        enum:
+        - true
+        description: 'Webhook alerts only: issue a new signing secret.'
+    required:
+    - id
+    additionalProperties: false
+- name: delete_alert
+  description: 'Destructive write operation: delete one alert by id, with its delivery log. Requires an
+    authenticated account.'
+  input_schema:
+    type: object
+    properties:
+      id:
+        type: string
+        maxLength: 40
+        description: Alert id from subscribe_alert or list_alerts, for example "alr_3f9a...".
+    required:
+    - id
+    additionalProperties: false
+- name: list_changes
+  description: New periods and revisions in the series the user has alerts on, paged with a cursor. Read-only.
+    Requires an authenticated account.
+  input_schema:
+    type: object
+    properties:
+      cursor:
+        type: string
+        maxLength: 18
+        description: next_cursor from an earlier call.
+      since:
+        type: string
+        maxLength: 40
+        description: ISO date or time for a first call, for example "2026-10-01". Ignored when cursor
+          is set.
+      alert:
+        type: string
+        maxLength: 40
+        description: 'Optional alert id: only changes matched to this alert.'
+      limit:
+        type: integer
+        minimum: 1
+        maximum: 100
+        description: Default 50.
+    additionalProperties: false
+- name: send_feedback
+  description: 'Write operation: send a data request, data error report, suggestion or bug report to the
+    Invokely team. Available without an account, rate limited (5 messages an hour without an account,
+    10 with one).'
+  input_schema:
+    type: object
+    properties:
+      kind:
+        type: string
+        enum:
+        - data_request
+        - data_error
+        - suggestion
+        - bug
+        - other
+        description: '"data_request": data Invokely lacks. "data_error": a value that looks wrong. "suggestion",
+          "bug" or "other".'
+      message:
+        type: string
+        minLength: 3
+        maxLength: 2000
+        description: What the user wants or what looks wrong, in plain text.
+      refs:
+        type: object
+        description: Optional references that make the message actionable.
+        properties:
+          indicator:
             type: string
-        period:
-          type: string
-          maxLength: 10
-        country:
-          type: string
-          maxLength: 2
-      required: [indicator, places]
-  - name: rank_places
-    description: Rank places within an area by an indicator, with the period and source provided.
-    input_schema:
-      type: object
-      properties:
-        indicator:
-          type: string
-        level:
-          type: string
-          enum: [country, region, province, municipality]
-        within:
-          type: string
-        period:
-          type: string
-          maxLength: 10
-        order:
-          type: string
-          enum: [desc, asc]
-        limit:
-          type: integer
-          minimum: 1
-          maximum: 100
-        min_population:
-          type: integer
-          minimum: 0
-        country:
-          type: string
-          maxLength: 2
-      required: [indicator, level]
+            maxLength: 100
+            description: Indicator id, for example "unemployment_rate", or the name of a statistic Invokely
+              lacks.
+          place:
+            type: string
+            maxLength: 200
+            description: Place name or id, for example "Texas" or "es-mun-08121".
+          source:
+            type: string
+            maxLength: 100
+            description: Source id or publisher name.
+          period:
+            type: string
+            maxLength: 20
+            description: Period, for example "2024", "2024-Q3" or "2024-09".
+          url:
+            type: string
+            maxLength: 500
+            description: 'An http or https link: the publisher page with the right figure, or the Invokely
+              page with the problem.'
+        additionalProperties: false
+      contact_email:
+        type: string
+        maxLength: 254
+        description: 'Optional, only when the user asks to be contacted and is not signed in: an address
+          the team may reply to. Signed-in users are answered at their account address.'
+    required:
+    - kind
+    - message
+    additionalProperties: false
+- name: list_collections
+  description: List the user's collections of saved statistics, own and team-shared. Read-only. Requires
+    an authenticated account.
+  input_schema:
+    type: object
+    properties: {}
+    additionalProperties: false
+- name: get_collection
+  description: Read one collection with the live figure and source of each saved item. Read-only. Requires
+    an authenticated account.
+  input_schema:
+    type: object
+    properties:
+      id:
+        type: string
+        maxLength: 40
+        description: Collection id from list_collections, for example "col_3f9a...".
+    required:
+    - id
+    additionalProperties: false
+- name: save_to_collection
+  description: 'Write operation: save a statistic page (value, ranking, indicator, place, topic or publisher)
+    to one of the user''s collections. Requires an authenticated account; available on every plan.'
+  input_schema:
+    type: object
+    properties:
+      kind:
+        type: string
+        enum:
+        - value
+        - ranking
+        - indicator
+        - place
+        - topic
+        - publisher
+        description: Optional. value, ranking, indicator, place, topic or publisher.
+      indicator:
+        type: string
+        maxLength: 100
+        description: Indicator id, for example "unemployment_rate".
+      place:
+        type: string
+        maxLength: 200
+        description: Place name or id, for example "Texas" or "es-mun-08121".
+      scope:
+        type: string
+        maxLength: 120
+        description: Ranking scope, for example "us-states".
+      topic:
+        type: string
+        maxLength: 60
+        description: Topic id or slug, for example "labour" or "labor-market".
+      publisher:
+        type: string
+        maxLength: 60
+        description: Publisher id or slug, for example "bls" or "ine".
+      collection:
+        type: string
+        maxLength: 40
+        description: 'Optional collection id from list_collections. Default: the user''s "Saved" collection.'
+      note:
+        type: string
+        maxLength: 500
+        description: Optional note shown with the item.
+    additionalProperties: false
 install:
   command: npx
   args:
-    - "-y"
-    - "github:estevecastells/invokely-mcp-connector"
+  - -y
+  - github:estevecastells/invokely-mcp-connector
 env_vars:
-  - name: INVOKELY_API_KEY
-    description: Optional bearer key for authenticated access to the hosted service; omitted for trial access.
-    required: false
+- name: INVOKELY_API_KEY
+  description: Optional bearer key for authenticated access to the hosted service. Required for the workspace,
+    alert, change-feed and collection tools; omit it for trial access to the statistics tools.
+  required: false
 license: MIT
-version: "0.1.0"
+version: 0.1.0
